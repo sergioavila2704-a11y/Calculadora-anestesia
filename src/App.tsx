@@ -47,24 +47,6 @@ function aminasMlHrToMcgKgMin(mlHr, peso, mgEnBolsa, volMl) {
   return Math.round(((r * concMcgMl) / (p * 60)) * 1000) / 1000;
 }
 
-function guedel(distanciaCm) {
-  const d = parseFloat(distanciaCm);
-  if (isNaN(d) || d <= 0) return null;
-  const tabla = [
-    { size: "000", cm: 4, uso: "Prematuro" },
-    { size: "00", cm: 5, uso: "Neonato" },
-    { size: "0", cm: 6, uso: "Lactante" },
-    { size: "1", cm: 7, uso: "Niño pequeño" },
-    { size: "2", cm: 8, uso: "Niño" },
-    { size: "3", cm: 9, uso: "Adulto pequeño / ♀" },
-    { size: "4", cm: 10, uso: "Adulto / ♂" },
-    { size: "5", cm: 11, uso: "Adulto grande" },
-  ];
-  let mejor = tabla[0];
-  for (const row of tabla) if (Math.abs(row.cm - d) < Math.abs(mejor.cm - d)) mejor = row;
-  return mejor;
-}
-
 const INDUCCION_DRUGS = [
   { nombre: "Propofol", low: 1.5, high: 2.5, unidad: "mg" },
   { nombre: "Etomidato", low: 0.2, high: 0.3, unidad: "mg" },
@@ -143,16 +125,55 @@ function dosisMaxAL(pesoKg, conEpi) {
   });
 }
 
-function anionGap(na, cl, hco3) {
-  const n = parseFloat(na), c = parseFloat(cl), h = parseFloat(hco3);
-  if ([n, c, h].some((x) => isNaN(x))) return null;
-  return Math.round((n - (c + h)) * 10) / 10;
-}
+function interpretarGasometria(phStr, pco2Str, hco3Str, pao2Str) {
+  const pH = parseFloat(phStr), pco2 = parseFloat(pco2Str), hco3 = parseFloat(hco3Str);
+  if ([pH, pco2, hco3].some((x) => isNaN(x))) return null;
 
-function osmolaridad(na, glucosa, bun) {
-  const n = parseFloat(na), g = parseFloat(glucosa), b = parseFloat(bun);
-  if ([n, g, b].some((x) => isNaN(x))) return null;
-  return Math.round((2 * n + g / 18 + b / 2.8) * 10) / 10;
+  let estado = pH < 7.35 ? "Acidemia" : pH > 7.45 ? "Alcalemia" : "pH normal";
+  let primario = "";
+  let compensacion = "";
+  let esperado = null;
+
+  if (pH < 7.35) {
+    if (hco3 < 22) {
+      primario = "Acidosis metabólica";
+      esperado = Math.round((1.5 * hco3 + 8) * 10) / 10;
+      const diff = pco2 - esperado;
+      if (Math.abs(diff) <= 2) compensacion = `Compensación respiratoria adecuada (Winter: PCO2 esperado ${esperado} ± 2)`;
+      else if (diff > 2) compensacion = `PCO2 más alto de lo esperado (${esperado}) → acidosis respiratoria agregada`;
+      else compensacion = `PCO2 más bajo de lo esperado (${esperado}) → alcalosis respiratoria agregada`;
+    } else if (pco2 > 45) {
+      primario = "Acidosis respiratoria";
+      compensacion = "Aguda: HCO3 sube ~1 por cada 10 mmHg de PCO2. Crónica: HCO3 sube ~3.5–4 por cada 10 mmHg.";
+    } else {
+      primario = "Acidemia con componentes mixtos — valorar en contexto clínico";
+    }
+  } else if (pH > 7.45) {
+    if (hco3 > 26) {
+      primario = "Alcalosis metabólica";
+      esperado = Math.round((0.7 * (hco3 - 24) + 40) * 10) / 10;
+      const diff = pco2 - esperado;
+      if (Math.abs(diff) <= 5) compensacion = `Compensación respiratoria adecuada (PCO2 esperado ≈ ${esperado})`;
+      else compensacion = `PCO2 fuera de lo esperado (${esperado}) → trastorno respiratorio agregado`;
+    } else if (pco2 < 35) {
+      primario = "Alcalosis respiratoria";
+      compensacion = "Aguda: HCO3 baja ~2 por cada 10 mmHg de PCO2. Crónica: HCO3 baja ~5 por cada 10 mmHg.";
+    } else {
+      primario = "Alcalemia con componentes mixtos — valorar en contexto clínico";
+    }
+  } else {
+    primario = "pH normal — puede ser normalidad o un trastorno mixto compensado";
+  }
+
+  let oxigenacion = null;
+  const pao2 = parseFloat(pao2Str);
+  if (!isNaN(pao2)) {
+    if (pao2 >= 80) oxigenacion = "Oxigenación normal";
+    else if (pao2 >= 60) oxigenacion = "Hipoxemia leve";
+    else oxigenacion = "Hipoxemia moderada-severa";
+  }
+
+  return { estado, primario, compensacion, oxigenacion };
 }
 
 const APFEL_ITEMS = [
@@ -216,14 +237,12 @@ const MODULES = [
   { id: "peso", eyebrow: "01", label: "Peso ideal / predicho / corregido", grupo: "Cálculos" },
   { id: "ett", eyebrow: "02", label: "Tubo endotraqueal", grupo: "Cálculos" },
   { id: "aminas", eyebrow: "03", label: "Conversión de aminas", grupo: "Cálculos" },
-  { id: "guedel", eyebrow: "04", label: "Cánula de Guedel", grupo: "Cálculos" },
-  { id: "induccion", eyebrow: "05", label: "Inducción y sedación", grupo: "Cálculos" },
-  { id: "liquidos", eyebrow: "06", label: "Líquidos (Holliday-Segar)", grupo: "Cálculos" },
-  { id: "ventmec", eyebrow: "07", label: "Ventilación mecánica", grupo: "Cálculos" },
-  { id: "balance", eyebrow: "08", label: "Balance de líquidos", grupo: "Cálculos" },
-  { id: "anestlocales", eyebrow: "09", label: "Dosis máx. anestésicos locales", grupo: "Cálculos" },
-  { id: "gasesosm", eyebrow: "10", label: "Anion gap / osmolaridad", grupo: "Cálculos" },
-  { id: "apfel", eyebrow: "11", label: "Score de Apfel (NVPO)", grupo: "Cálculos" },
+  { id: "induccion", eyebrow: "04", label: "Inducción y sedación", grupo: "Cálculos" },
+  { id: "ventmec", eyebrow: "05", label: "Ventilación mecánica", grupo: "Cálculos" },
+  { id: "balance", eyebrow: "06", label: "Balance de líquidos", grupo: "Cálculos" },
+  { id: "gasometria", eyebrow: "07", label: "Interpretación de gasometría", grupo: "Cálculos" },
+  { id: "anestlocales", eyebrow: "08", label: "Dosis máx. anestésicos locales", grupo: "Cálculos" },
+  { id: "apfel", eyebrow: "09", label: "Score de Apfel (NVPO)", grupo: "Cálculos" },
   { id: "viaaerea", eyebrow: "R1", label: "Vía aérea difícil", grupo: "Referencia" },
   { id: "scores", eyebrow: "R2", label: "ASA y Caprini", grupo: "Referencia" },
   { id: "referencia", eyebrow: "R3", label: "Hemodinámica", grupo: "Referencia" },
@@ -310,27 +329,15 @@ export default function App() {
     return aminasMlHrToMcgKgMin(mlHr, pesoPac, mgBolsa, volBolsa);
   }, [modo, dosis, mlHr, pesoPac, mgBolsa, volBolsa]);
 
-  const [distancia, setDistancia] = useState("");
-  const cannula = useMemo(() => guedel(distancia), [distancia]);
-
-  const [pesoInduccion, setPesoInduccion] = useState("");
-  const induccion = useMemo(() => dosisPorPeso(pesoInduccion, INDUCCION_DRUGS), [pesoInduccion]);
-  const sedacion = useMemo(() => dosisPorPeso(pesoInduccion, SEDACION_DRUGS), [pesoInduccion]);
-
-  const [pesoLiquidos, setPesoLiquidos] = useState("");
-  const liquidos = useMemo(() => hollidaySegar(pesoLiquidos), [pesoLiquidos]);
-
   const [pesoAL, setPesoAL] = useState("");
   const [conEpi, setConEpi] = useState(false);
   const dosisAL = useMemo(() => dosisMaxAL(pesoAL, conEpi), [pesoAL, conEpi]);
 
-  const [na, setNa] = useState("");
-  const [cl, setCl] = useState("");
-  const [hco3, setHco3] = useState("");
-  const [glucosa, setGlucosa] = useState("");
-  const [bun, setBun] = useState("");
-  const ag = useMemo(() => anionGap(na, cl, hco3), [na, cl, hco3]);
-  const osm = useMemo(() => osmolaridad(na, glucosa, bun), [na, glucosa, bun]);
+  const [gasoPh, setGasoPh] = useState("");
+  const [gasoPco2, setGasoPco2] = useState("");
+  const [gasoHco3, setGasoHco3] = useState("");
+  const [gasoPao2, setGasoPao2] = useState("");
+  const gaso = useMemo(() => interpretarGasometria(gasoPh, gasoPco2, gasoHco3, gasoPao2), [gasoPh, gasoPco2, gasoHco3, gasoPao2]);
 
   const [apfelSel, setApfelSel] = useState({});
   const apfelScore = Object.values(apfelSel).filter(Boolean).length;
@@ -423,7 +430,7 @@ export default function App() {
             <div className={`text-[10px] tracking-[0.15em] font-mono ${currentModule?.grupo === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{currentModule?.eyebrow}</div>
             <div className="text-sm text-emerald-300">{currentModule?.label}</div>
           </div>
-          <span className={`font-mono text-slate-400 transition-transform ${mobileNavOpen ? "rotate-180" : ""}`}>⌄</span>
+          <span className={`flex items-center justify-center w-9 h-9 rounded-full bg-emerald-400/15 border border-emerald-400/50 text-emerald-300 text-3xl font-bold leading-none transition-transform ${mobileNavOpen ? "rotate-180" : ""}`}>⌄</span>
         </button>
         {mobileNavOpen && (
           <div className="px-3 pb-3 max-h-[60vh] overflow-y-auto">
@@ -554,17 +561,6 @@ export default function App() {
             </section>
           )}
 
-          {active === "guedel" && (
-            <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Cánula orofaríngea (Guedel)</h2>
-              <Field label="Distancia comisura bucal – ángulo mandibular (cm)"><input className={inputCls} type="number" value={distancia} onChange={(e) => setDistancia(e.target.value)} placeholder="9" /></Field>
-              <div className="mt-6 pt-6 border-t border-slate-800">
-                <Readout value={cannula ? `#${cannula.size}` : "—"} size="text-4xl" />
-                {cannula && <div className="text-sm text-slate-400 mt-2">{cannula.uso}</div>}
-              </div>
-            </section>
-          )}
-
           {active === "induccion" && (
             <section className="max-w-lg">
               <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Dosis de inducción y sedación</h2>
@@ -572,23 +568,6 @@ export default function App() {
               <div className="mt-4 pt-4 border-t border-slate-800">
                 <DrugTable title="Inducción" lista={INDUCCION_DRUGS} peso={induccion} />
                 <DrugTable title="Sedación / mantenimiento" lista={SEDACION_DRUGS} peso={sedacion} />
-              </div>
-            </section>
-          )}
-
-          {active === "liquidos" && (
-            <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Líquidos de mantenimiento — Holliday-Segar</h2>
-              <Field label="Peso del paciente (kg)"><input className={inputCls} type="number" value={pesoLiquidos} onChange={(e) => setPesoLiquidos(e.target.value)} placeholder="20" /></Field>
-              <div className="mt-6 pt-6 border-t border-slate-800 space-y-4">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Tasa de mantenimiento</div>
-                  <Readout value={liquidos?.ratoHr ?? "—"} unit="ml/hr" size="text-4xl" />
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Total en 24 h</div>
-                  <Readout value={liquidos?.total24h ?? "—"} unit="ml" size="text-2xl" />
-                </div>
               </div>
             </section>
           )}
@@ -729,25 +708,37 @@ export default function App() {
             </section>
           )}
 
-          {active === "gasesosm" && (
+          {active === "gasometria" && (
             <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Anion gap y osmolaridad calculada</h2>
+              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Interpretación de gasometría arterial</h2>
               <div className="grid grid-cols-3 gap-3 mb-2">
-                <Field label="Na (mEq/L)"><input className={inputCls} type="number" value={na} onChange={(e) => setNa(e.target.value)} placeholder="140" /></Field>
-                <Field label="Cl (mEq/L)"><input className={inputCls} type="number" value={cl} onChange={(e) => setCl(e.target.value)} placeholder="104" /></Field>
-                <Field label="HCO3 (mEq/L)"><input className={inputCls} type="number" value={hco3} onChange={(e) => setHco3(e.target.value)} placeholder="24" /></Field>
+                <Field label="pH"><input className={inputCls} type="number" step="0.01" value={gasoPh} onChange={(e) => setGasoPh(e.target.value)} placeholder="7.30" /></Field>
+                <Field label="PaCO2 (mmHg)"><input className={inputCls} type="number" value={gasoPco2} onChange={(e) => setGasoPco2(e.target.value)} placeholder="30" /></Field>
+                <Field label="HCO3 (mEq/L)"><input className={inputCls} type="number" value={gasoHco3} onChange={(e) => setGasoHco3(e.target.value)} placeholder="15" /></Field>
               </div>
-              <div className="mb-6">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Anion gap (normal 8 – 12 mEq/L)</div>
-                <Readout value={ag ?? "—"} unit="mEq/L" size="text-3xl" />
-              </div>
-              <div className="grid grid-cols-2 gap-3 mb-2">
-                <Field label="Glucosa (mg/dL)"><input className={inputCls} type="number" value={glucosa} onChange={(e) => setGlucosa(e.target.value)} placeholder="90" /></Field>
-                <Field label="BUN (mg/dL)"><input className={inputCls} type="number" value={bun} onChange={(e) => setBun(e.target.value)} placeholder="14" /></Field>
-              </div>
-              <div className="pt-2">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Osmolaridad calculada (normal 275 – 295)</div>
-                <Readout value={osm ?? "—"} unit="mOsm/kg" size="text-3xl" />
+              <Field label="PaO2 (mmHg) — opcional"><input className={inputCls} type="number" value={gasoPao2} onChange={(e) => setGasoPao2(e.target.value)} placeholder="90" /></Field>
+
+              <div className="mt-6 pt-6 border-t border-slate-800 space-y-4">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Estado ácido-base</div>
+                  <Readout value={gaso?.estado ?? "—"} size="text-2xl" />
+                </div>
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Trastorno primario</div>
+                  <div className="font-mono text-emerald-300 text-lg">{gaso?.primario ?? "—"}</div>
+                </div>
+                {gaso?.compensacion && (
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Compensación</div>
+                    <div className="text-sm text-slate-300 leading-relaxed">{gaso.compensacion}</div>
+                  </div>
+                )}
+                {gaso?.oxigenacion && (
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Oxigenación</div>
+                    <div className="font-mono text-cyan-300 text-sm">{gaso.oxigenacion}</div>
+                  </div>
+                )}
               </div>
             </section>
           )}
