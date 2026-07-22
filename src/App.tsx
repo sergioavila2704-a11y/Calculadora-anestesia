@@ -322,17 +322,18 @@ export default function App() {
   const [modo, setModo] = useState("mcg2ml");
   const [dosis, setDosis] = useState("");
   const [mlHr, setMlHr] = useState("");
-  const [pesoPac, setPesoPac] = useState("");
   const [mgBolsa, setMgBolsa] = useState("");
   const [volBolsa, setVolBolsa] = useState("");
   const resultadoAminas = useMemo(() => {
-    if (modo === "mcg2ml") return aminasMcgKgMinToMlHr(dosis, pesoPac, mgBolsa, volBolsa);
-    return aminasMlHrToMcgKgMin(mlHr, pesoPac, mgBolsa, volBolsa);
-  }, [modo, dosis, mlHr, pesoPac, mgBolsa, volBolsa]);
+    if (modo === "mcg2ml") return aminasMcgKgMinToMlHr(dosis, pesoReal, mgBolsa, volBolsa);
+    return aminasMlHrToMcgKgMin(mlHr, pesoReal, mgBolsa, volBolsa);
+  }, [modo, dosis, mlHr, pesoReal, mgBolsa, volBolsa]);
 
-  const [pesoAL, setPesoAL] = useState("");
+  const induccion = useMemo(() => dosisPorPeso(pesoReal, INDUCCION_DRUGS), [pesoReal]);
+  const sedacion = useMemo(() => dosisPorPeso(pesoReal, SEDACION_DRUGS), [pesoReal]);
+
   const [conEpi, setConEpi] = useState(false);
-  const dosisAL = useMemo(() => dosisMaxAL(pesoAL, conEpi), [pesoAL, conEpi]);
+  const dosisAL = useMemo(() => dosisMaxAL(pesoReal, conEpi), [pesoReal, conEpi]);
 
   const [gasoPh, setGasoPh] = useState("");
   const [gasoPco2, setGasoPco2] = useState("");
@@ -343,9 +344,8 @@ export default function App() {
   const [apfelSel, setApfelSel] = useState({});
   const apfelScore = Object.values(apfelSel).filter(Boolean).length;
 
-  const [pesoVent, setPesoVent] = useState("");
   const [mlKg, setMlKg] = useState("6");
-  const vt = useMemo(() => volumenTidal(pesoVent, mlKg), [pesoVent, mlKg]);
+  const vt = useMemo(() => volumenTidal(ibw, mlKg), [ibw, mlKg]);
   const [vtVm, setVtVm] = useState("");
   const [frVm, setFrVm] = useState("");
   const vm = useMemo(() => volumenMinuto(vtVm, frVm), [vtVm, frVm]);
@@ -367,10 +367,9 @@ export default function App() {
     [ivAdmin, hemoderivados, otrosIn, diuresis, sangrado, insensibles, otrosOut]
   );
 
-  const [pesoRepo, setPesoRepo] = useState("");
   const [horasAyuno, setHorasAyuno] = useState("");
   const [severidad, setSeveridad] = useState("menor");
-  const repo = useMemo(() => reposicionPerioperatoria(pesoRepo, horasAyuno, severidad), [pesoRepo, horasAyuno, severidad]);
+  const repo = useMemo(() => reposicionPerioperatoria(pesoReal, horasAyuno, severidad), [pesoReal, horasAyuno, severidad]);
 
   const [showIntro, setShowIntro] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -529,7 +528,7 @@ export default function App() {
               <Field label="Estatura (cm)">
                 <input className={inputCls} type="number" value={altura} onChange={(e) => setAltura(e.target.value)} placeholder="165" />
               </Field>
-              <Field label="Peso real (kg) — solo para peso corregido">
+              <Field label="Peso real (kg) — se comparte con aminas, inducción, balance y anestésicos locales">
                 <input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="95" />
               </Field>
               <div className="mt-6 pt-6 border-t border-slate-800 space-y-5">
@@ -581,7 +580,7 @@ export default function App() {
               ) : (
                 <Field label="Velocidad de infusión (ml/hr)"><input className={inputCls} type="number" value={mlHr} onChange={(e) => setMlHr(e.target.value)} placeholder="5" /></Field>
               )}
-              <Field label="Peso del paciente (kg)"><input className={inputCls} type="number" value={pesoPac} onChange={(e) => setPesoPac(e.target.value)} placeholder="70" /></Field>
+              <Field label="Peso del paciente (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Mg en la bolsa"><input className={inputCls} type="number" value={mgBolsa} onChange={(e) => setMgBolsa(e.target.value)} placeholder="4" /></Field>
                 <Field label="Volumen (ml)"><input className={inputCls} type="number" value={volBolsa} onChange={(e) => setVolBolsa(e.target.value)} placeholder="250" /></Field>
@@ -593,7 +592,7 @@ export default function App() {
           {active === "induccion" && (
             <section className="max-w-lg">
               <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Dosis de inducción y sedación</h2>
-              <Field label="Peso del paciente (kg)"><input className={inputCls} type="number" value={pesoInduccion} onChange={(e) => setPesoInduccion(e.target.value)} placeholder="70" /></Field>
+              <Field label="Peso del paciente (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
               <div className="mt-4 pt-4 border-t border-slate-800">
                 <DrugTable title="Inducción" lista={INDUCCION_DRUGS} peso={induccion} />
                 <DrugTable title="Sedación / mantenimiento" lista={SEDACION_DRUGS} peso={sedacion} />
@@ -608,7 +607,9 @@ export default function App() {
               <div className="mb-8 p-4 rounded-md border border-slate-800 bg-slate-900/30">
                 <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Volumen tidal protector</div>
                 <div className="grid grid-cols-2 gap-3 mb-2">
-                  <Field label="Peso predicho (kg)"><input className={inputCls} type="number" value={pesoVent} onChange={(e) => setPesoVent(e.target.value)} placeholder="60" /></Field>
+                  <Field label="Peso predicho (kg) — del módulo Peso">
+                    <div className={`${inputCls} flex items-center`}>{ibw ?? <span className="text-slate-600">completa el módulo Peso</span>}</div>
+                  </Field>
                   <Field label="ml/kg objetivo">
                     <select className={inputCls} value={mlKg} onChange={(e) => setMlKg(e.target.value)}>
                       {[4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n} ml/kg</option>)}
@@ -675,7 +676,7 @@ export default function App() {
               <div className="p-4 rounded-md border border-slate-800 bg-slate-900/30">
                 <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Reposición perioperatoria (déficit + mantenimiento + tercer espacio)</div>
                 <div className="grid grid-cols-2 gap-3 mb-2">
-                  <Field label="Peso (kg)"><input className={inputCls} type="number" value={pesoRepo} onChange={(e) => setPesoRepo(e.target.value)} placeholder="70" /></Field>
+                  <Field label="Peso (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
                   <Field label="Horas de ayuno"><input className={inputCls} type="number" value={horasAyuno} onChange={(e) => setHorasAyuno(e.target.value)} placeholder="8" /></Field>
                 </div>
                 <Field label="Trauma quirúrgico (tercer espacio)">
@@ -721,7 +722,7 @@ export default function App() {
           {active === "anestlocales" && (
             <section className="max-w-lg">
               <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Dosis máxima — anestésicos locales</h2>
-              <Field label="Peso del paciente (kg)"><input className={inputCls} type="number" value={pesoAL} onChange={(e) => setPesoAL(e.target.value)} placeholder="70" /></Field>
+              <Field label="Peso del paciente (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
               <div className="flex gap-2 mb-5">
                 <button onClick={() => setConEpi(false)} className={`flex-1 py-2 rounded-md border text-xs font-mono ${!conEpi ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>Sin epinefrina</button>
                 <button onClick={() => setConEpi(true)} className={`flex-1 py-2 rounded-md border text-xs font-mono ${conEpi ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>Con epinefrina</button>
