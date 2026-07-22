@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useMemo } from "react";
+import { Analytics } from "@vercel/analytics/react";
 
 // ---------- Fórmulas y datos clínicos ----------
 
@@ -858,6 +859,7 @@ export default function App() {
           </div>
         </main>
       </div>
+      <Analytics />
     </div>
   );
 }
