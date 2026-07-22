@@ -1,18 +1,23 @@
 // @ts-nocheck
 import React, { useState, useMemo } from "react";
-import { Analytics } from "@vercel/analytics/react";
 
 // ---------- Fórmulas y datos clínicos ----------
 
-function pesoIdealDevine(alturaCm, sexo) {
+function pesoIdealBMI(alturaCm, sexo) {
   if (!alturaCm || alturaCm <= 0) return null;
-  const pulgadas = alturaCm / 2.54;
-  const base = sexo === "M" ? 50 : 45.5;
-  const peso = base + 2.3 * (pulgadas - 60);
+  const alturaM = alturaCm / 100;
+  const factor = sexo === "M" ? 23 : 21.5;
+  return Math.round(alturaM * alturaM * factor * 10) / 10;
+}
+
+function pesoPredichoDevine(alturaCm, sexo) {
+  if (!alturaCm || alturaCm <= 0) return null;
+  const base = sexo === "M" ? 50 : 45;
+  const peso = (alturaCm - 152.4) * 0.9 + base;
   return Math.round(peso * 10) / 10;
 }
 
-function pesoCorregido(pesoRealKg, pesoIdealKg, factor = 0.4) {
+function pesoCorregido(pesoRealKg, pesoIdealKg, factor = 0.5) {
   const real = parseFloat(pesoRealKg);
   if (isNaN(real) || real <= 0 || pesoIdealKg == null) return null;
   return Math.round((pesoIdealKg + factor * (real - pesoIdealKg)) * 10) / 10;
@@ -313,8 +318,9 @@ export default function App() {
   const [altura, setAltura] = useState("");
   const [sexo, setSexo] = useState("F");
   const [pesoReal, setPesoReal] = useState("");
-  const ibw = useMemo(() => pesoIdealDevine(parseFloat(altura), sexo), [altura, sexo]);
-  const abw = useMemo(() => pesoCorregido(pesoReal, ibw), [pesoReal, ibw]);
+  const pesoIdeal = useMemo(() => pesoIdealBMI(parseFloat(altura), sexo), [altura, sexo]);
+  const pesoPredicho = useMemo(() => pesoPredichoDevine(parseFloat(altura), sexo), [altura, sexo]);
+  const abw = useMemo(() => pesoCorregido(pesoReal, pesoIdeal), [pesoReal, pesoIdeal]);
 
   const [edad, setEdad] = useState("");
   const ett = useMemo(() => tuboETT(edad), [edad]);
@@ -345,7 +351,7 @@ export default function App() {
   const apfelScore = Object.values(apfelSel).filter(Boolean).length;
 
   const [mlKg, setMlKg] = useState("6");
-  const vt = useMemo(() => volumenTidal(ibw, mlKg), [ibw, mlKg]);
+  const vt = useMemo(() => volumenTidal(pesoPredicho, mlKg), [pesoPredicho, mlKg]);
   const [vtVm, setVtVm] = useState("");
   const [frVm, setFrVm] = useState("");
   const vm = useMemo(() => volumenMinuto(vtVm, frVm), [vtVm, frVm]);
@@ -533,15 +539,15 @@ export default function App() {
               </Field>
               <div className="mt-6 pt-6 border-t border-slate-800 space-y-5">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso ideal (Devine) — dosificación</div>
-                  <Readout value={ibw ?? "—"} unit="kg" size="text-3xl" />
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso ideal — (talla en m)² × 21.5 (♀) o × 23 (♂)</div>
+                  <Readout value={pesoIdeal ?? "—"} unit="kg" size="text-3xl" />
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso predicho (PBW) — mismo cálculo, usado para volumen tidal en ventilación</div>
-                  <Readout value={ibw ?? "—"} unit="kg" size="text-3xl" />
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso predicho (PBW) — (talla cm − 152.4) × 0.9 + 45 (♀) o + 50 (♂), usado para volumen tidal</div>
+                  <Readout value={pesoPredicho ?? "—"} unit="kg" size="text-3xl" />
                 </div>
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso corregido/ajustado (IBW + 0.4 × [real − IBW]) — pacientes con obesidad</div>
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso corregido — peso ideal + 0.5 × (peso real − peso ideal), pacientes con obesidad</div>
                   <Readout value={abw ?? "—"} unit="kg" size="text-3xl" />
                 </div>
               </div>
@@ -608,7 +614,7 @@ export default function App() {
                 <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Volumen tidal protector</div>
                 <div className="grid grid-cols-2 gap-3 mb-2">
                   <Field label="Peso predicho (kg) — del módulo Peso">
-                    <div className={`${inputCls} flex items-center`}>{ibw ?? <span className="text-slate-600">completa el módulo Peso</span>}</div>
+                    <div className={`${inputCls} flex items-center`}>{pesoPredicho ?? <span className="text-slate-600">completa el módulo Peso</span>}</div>
                   </Field>
                   <Field label="ml/kg objetivo">
                     <select className={inputCls} value={mlKg} onChange={(e) => setMlKg(e.target.value)}>
@@ -860,7 +866,6 @@ export default function App() {
           </div>
         </main>
       </div>
-      <Analytics />
     </div>
   );
 }
