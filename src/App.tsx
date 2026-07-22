@@ -7,7 +7,7 @@ function pesoIdealBMI(alturaCm, sexo) {
   if (!alturaCm || alturaCm <= 0) return null;
   const alturaM = alturaCm / 100;
   const factor = sexo === "M" ? 23 : 21.5;
-  return Math.round(alturaM * alturaM * factor * 10) / 10;
+  return Math.round(alturaM * 2 * factor * 100) / 100;
 }
 
 function pesoPredichoDevine(alturaCm, sexo) {
@@ -539,7 +539,7 @@ export default function App() {
               </Field>
               <div className="mt-6 pt-6 border-t border-slate-800 space-y-5">
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso ideal — (talla en m)² × 21.5 (♀) o × 23 (♂)</div>
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso ideal — talla (m) × 2 × 21.5 (♀) o × 23 (♂)</div>
                   <Readout value={pesoIdeal ?? "—"} unit="kg" size="text-3xl" />
                 </div>
                 <div>
