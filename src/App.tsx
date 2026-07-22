@@ -373,8 +373,17 @@ export default function App() {
 
   const [showIntro, setShowIntro] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
   const gruposNav = ["Cálculos", "Referencia"];
   const currentModule = MODULES.find((m) => m.id === active);
+
+  React.useEffect(() => {
+    const isStandalone =
+      window.matchMedia?.("(display-mode: standalone)")?.matches || window.navigator?.standalone === true;
+    if (!isStandalone) setShowInstallBanner(true);
+    setIsIOS(/iPhone|iPad|iPod/.test(window.navigator.userAgent));
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#0A0E0D] text-slate-100 flex flex-col">
@@ -421,6 +430,18 @@ export default function App() {
         </div>
       </header>
 
+      {showInstallBanner && (
+        <div className="md:hidden bg-emerald-400/10 border-b border-emerald-400/30 px-4 py-2.5 flex items-start gap-2">
+          <span className="text-emerald-300 mt-0.5">📲</span>
+          <div className="flex-1 text-xs text-emerald-100 leading-relaxed">
+            <span className="font-semibold">Instálala en tu pantalla de inicio</span> — {isIOS
+              ? <>en Safari toca compartir <span className="font-mono">⬆️</span> → "Añadir a pantalla de inicio".</>
+              : <>toca los 3 puntos (⋮) arriba → "Instalar app" o "Añadir a pantalla principal".</>}
+          </div>
+          <button onClick={() => setShowInstallBanner(false)} className="text-emerald-300/70 text-lg leading-none px-1" aria-label="Cerrar aviso">×</button>
+        </div>
+      )}
+
       <div className="md:hidden border-b border-slate-800 relative z-20">
         <button
           onClick={() => setMobileNavOpen((o) => !o)}
@@ -430,7 +451,14 @@ export default function App() {
             <div className={`text-[10px] tracking-[0.15em] font-mono ${currentModule?.grupo === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{currentModule?.eyebrow}</div>
             <div className="text-sm text-emerald-300">{currentModule?.label}</div>
           </div>
-          <span className={`flex items-center justify-center w-9 h-9 rounded-full bg-emerald-400/15 border border-emerald-400/50 text-emerald-300 text-3xl font-bold leading-none transition-transform ${mobileNavOpen ? "rotate-180" : ""}`}>⌄</span>
+          <span
+            className={`flex items-center justify-center w-9 h-9 rounded-full bg-emerald-400/15 border border-emerald-400/50 transition-transform duration-200 ${mobileNavOpen ? "rotate-180" : ""}`}
+            style={{ transformOrigin: "50% 50%" }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </span>
         </button>
         {mobileNavOpen && (
           <div className="px-3 pb-3 max-h-[60vh] overflow-y-auto">
