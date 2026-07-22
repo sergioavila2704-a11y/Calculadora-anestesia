@@ -1,5 +1,6 @@
 // @ts-nocheck
 import React, { useState, useMemo } from "react";
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // ---------- Fórmulas y datos clínicos ----------
 
@@ -866,6 +867,7 @@ export default function App() {
           </div>
         </main>
       </div>
+      <SpeedInsights />
     </div>
   );
 }
