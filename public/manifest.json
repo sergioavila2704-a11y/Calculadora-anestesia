@@ -1,0 +1,1 @@
+{ "name": "AnestesiApp - Calculadoras de Anestesia", "short_name": "AnestesiApp", "start_url": ".", "display": "standalone", "background_color": "#0A0E0D", "theme_color": "#0A0E0D", "icons": [ { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" } ] }
