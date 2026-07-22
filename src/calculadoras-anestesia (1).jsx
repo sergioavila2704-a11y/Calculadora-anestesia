@@ -364,9 +364,7 @@ export default function App() {
   const repo = useMemo(() => reposicionPerioperatoria(pesoRepo, horasAyuno, severidad), [pesoRepo, horasAyuno, severidad]);
 
   const [showIntro, setShowIntro] = useState(true);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const gruposNav = ["Cálculos", "Referencia"];
-  const currentModule = MODULES.find((m) => m.id === active);
 
   return (
     <div className="min-h-screen bg-[#0A0E0D] text-slate-100 flex flex-col">
@@ -378,10 +376,10 @@ export default function App() {
             <div className="text-[11px] uppercase tracking-[0.2em] text-emerald-400/80 mb-1">Bienvenido</div>
             <h2 className="text-lg font-semibold mb-4">Cómo usar esta app</h2>
             <ul className="space-y-3 text-sm text-slate-300 mb-6">
-              <li className="flex items-start gap-2"><span className="text-emerald-400 shrink-0 w-4">1.</span><span>Toca la barra de arriba (celular) o el menú lateral (compu) para elegir un módulo.</span></li>
-              <li className="flex items-start gap-2"><span className="text-emerald-400 shrink-0 w-4">2.</span><span>Llena los campos — el resultado se calcula solo, sin botón de "calcular".</span></li>
-              <li className="flex items-start gap-2"><span className="text-emerald-400 shrink-0 w-4">3.</span><span>La sección <span className="text-cyan-400">Referencia</span> son datos consultables, no calculadoras.</span></li>
-              <li className="flex items-start gap-2"><span className="text-emerald-400 shrink-0 w-4">4.</span><span>Toca el <span className="font-mono">?</span> de arriba cuando quieras volver a ver esto.</span></li>
+              <li className="flex gap-2"><span className="text-emerald-400">1.</span> Elige un módulo del menú (izquierda en compu, arriba en celular).</li>
+              <li className="flex gap-2"><span className="text-emerald-400">2.</span> Llena los campos — el resultado se calcula solo, sin botón de "calcular".</li>
+              <li className="flex gap-2"><span className="text-emerald-400">3.</span> La sección <span className="text-cyan-400">Referencia</span> son datos consultables, no calculadoras.</li>
+              <li className="flex gap-2"><span className="text-emerald-400">4.</span> Toca el <span className="font-mono">?</span> de arriba cuando quieras volver a ver esto.</li>
             </ul>
             <div className="text-[11px] text-amber-500/80 mb-5 leading-relaxed">Herramienta de apoyo educativo. No sustituye el criterio clínico ni protocolos institucionales.</div>
             <button
@@ -413,44 +411,8 @@ export default function App() {
         </div>
       </header>
 
-      <div className="md:hidden border-b border-slate-800 relative z-20">
-        <button
-          onClick={() => setMobileNavOpen((o) => !o)}
-          className="w-full flex items-center justify-between px-4 py-3 bg-slate-900/40"
-        >
-          <div className="text-left">
-            <div className={`text-[10px] tracking-[0.15em] font-mono ${currentModule?.grupo === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{currentModule?.eyebrow}</div>
-            <div className="text-sm text-emerald-300">{currentModule?.label}</div>
-          </div>
-          <span className={`font-mono text-slate-400 transition-transform ${mobileNavOpen ? "rotate-180" : ""}`}>⌄</span>
-        </button>
-        {mobileNavOpen && (
-          <div className="px-3 pb-3 max-h-[60vh] overflow-y-auto">
-            {gruposNav.map((g) => (
-              <div key={g} className="mb-3">
-                <div className="px-1 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">{g}</div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {MODULES.filter((m) => m.grupo === g).map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => { setActive(m.id); setMobileNavOpen(false); }}
-                      className={`text-left px-3 py-2.5 rounded-md border transition-colors ${
-                        active === m.id ? "bg-emerald-400/10 border-emerald-400/60" : "border-slate-800 hover:bg-slate-900/40"
-                      }`}
-                    >
-                      <div className={`text-[10px] tracking-[0.15em] font-mono ${g === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{m.eyebrow}</div>
-                      <div className={`text-xs leading-tight ${active === m.id ? "text-emerald-300" : "text-slate-300"}`}>{m.label}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="flex flex-1 flex-col md:flex-row">
-        <nav className="hidden md:block md:w-60 border-b md:border-b-0 md:border-r border-slate-800 md:overflow-y-auto">
+        <nav className="md:w-60 border-b md:border-b-0 md:border-r border-slate-800 md:overflow-y-auto">
           {gruposNav.map((g) => (
             <div key={g} className="p-3 md:p-0 border-b border-slate-800/60 md:border-b-0 last:border-b-0">
               <div className="px-1 md:px-4 pt-1 md:pt-3 pb-2 md:pb-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">{g}</div>
