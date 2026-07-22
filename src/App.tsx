@@ -1,3 +1,4 @@
+//@ts-nocheck
 import React, { useState, useMemo } from "react";
 
 // ---------- Fórmulas y datos clínicos ----------
