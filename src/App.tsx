@@ -1,6 +1,5 @@
 // @ts-nocheck
 import React, { useState, useMemo } from "react";
-import { SpeedInsights } from '@vercel/speed-insights/react';
 
 // ---------- Fórmulas y datos clínicos ----------
 
@@ -207,6 +206,26 @@ const ASA_CLASES = [
   { clase: "VI", desc: "Muerte cerebral, donador de órganos." },
 ];
 
+const K_REF = [
+  { grupo: "Objetivo y decisión de cirugía", filas: [
+    ["Rango objetivo antes de cirugía electiva", "4.0 – 5.0 mEq/L"],
+    ["Posponer cirugía electiva si", "K+ < 3.0 mEq/L"],
+    ["Cirugía urgente/emergente con K+ bajo", "Reposición IV según severidad, no esperar corrección completa"],
+  ]},
+  { grupo: "Velocidad de infusión IV (según severidad)", filas: [
+    ["Estándar, vía periférica", "10 – 20 mEq/hora"],
+    ["Extrema (K+ < 1.5 mEq/L), con monitoreo cardiaco continuo / línea central", "Hasta 40 mEq/hora (límite FDA en urgencia con cambios en ECG)"],
+    ["Máximo absoluto en cualquier escenario", "40 mEq/hora"],
+  ]},
+  { grupo: "Antes de reponer", filas: [
+    ["Revisar y corregir magnesio primero", "La hipomagnesemia es la causa más común de hipokalemia refractaria — el potasio no se normaliza si el magnesio sigue bajo"],
+  ]},
+  { grupo: "Riesgos a tener en cuenta", filas: [
+    ["Sobrecorrección", "Riesgo de hiperkalemia de rebote, especialmente en parálisis periódica tirotóxica u otros cuadros de redistribución transcelular"],
+    ["Cloruro de potasio IV", "Medicamento de alto riesgo (ISMP) — historial de errores fatales por confusión de concentración o infusión IV rápida. Verificar dos veces concentración, vía y velocidad"],
+  ]},
+];
+
 const REF_ROWS = [
   { grupo: "Presión arterial sistémica", filas: [["Sistólica", "90 – 140 mmHg"], ["Diastólica", "60 – 90 mmHg"], ["Media (PAM)", "70 – 105 mmHg"]] },
   { grupo: "Presión arterial pulmonar", filas: [["Sistólica", "15 – 30 mmHg"], ["Diastólica", "4 – 12 mmHg"], ["Media (mPAP)", "9 – 18 mmHg (>20 = HTP)"], ["Presión capilar pulmonar (PCP/wedge)", "4 – 12 mmHg"]] },
@@ -232,6 +251,51 @@ function volumenMinuto(vtMl, frRpm) {
   return Math.round(((vt * fr) / 1000) * 100) / 100;
 }
 
+function volumenSanguineo(pesoKg, sexo) {
+  const p = parseFloat(pesoKg);
+  if (isNaN(p) || p <= 0) return null;
+  const factor = sexo === "M" ? 70 : 65;
+  return Math.round(p * factor);
+}
+
+function sangradoPermisible(vsc, hctoRealPct, hctoCriticoPct) {
+  const h = parseFloat(hctoRealPct);
+  if (vsc == null || isNaN(h) || h <= 0) return null;
+  return Math.round(vsc * (h - hctoCriticoPct) / h);
+}
+
+function volEritrocitario(vsc, hctoPct) {
+  const h = parseFloat(hctoPct);
+  if (vsc == null || isNaN(h)) return null;
+  return Math.round(vsc * (h / 100));
+}
+
+function bicarbonatoNecesario(pesoKg, deficitBase) {
+  const p = parseFloat(pesoKg), d = parseFloat(deficitBase);
+  if (isNaN(p) || p <= 0 || isNaN(d) || d <= 0) return null;
+  const total = 0.2 * p * d;
+  const inicial = total / 2;
+  return {
+    total: Math.round(total * 10) / 10,
+    inicial: Math.round(inicial * 10) / 10,
+    ampolletas: Math.ceil(inicial / 8.9),
+    frascos: Math.ceil(inicial / 44.5),
+  };
+}
+
+function calcioCorregido(caMedido, albumina) {
+  const ca = parseFloat(caMedido), alb = parseFloat(albumina);
+  if (isNaN(ca) || isNaN(alb)) return null;
+  return Math.round((ca + 0.8 * (4.0 - alb)) * 100) / 100;
+}
+
+function fueraDeRango(valor, min, max) {
+  if (valor === "" || valor === null || valor === undefined) return false;
+  const v = parseFloat(valor);
+  if (isNaN(v)) return false;
+  return v < min || v > max;
+}
+
 function distensibilidadEstatica(vtMl, pplat, peep) {
   const vt = parseFloat(vtMl), pp = parseFloat(pplat), pe = parseFloat(peep);
   if (isNaN(vt) || isNaN(pp) || isNaN(pe) || pp - pe <= 0) return null;
@@ -241,19 +305,33 @@ function distensibilidadEstatica(vtMl, pplat, peep) {
 // ---------- UI ----------
 
 const MODULES = [
-  { id: "peso", eyebrow: "01", label: "Peso ideal / predicho / corregido", grupo: "Cálculos" },
-  { id: "ett", eyebrow: "02", label: "Tubo endotraqueal", grupo: "Cálculos" },
-  { id: "aminas", eyebrow: "03", label: "Conversión de aminas", grupo: "Cálculos" },
-  { id: "induccion", eyebrow: "04", label: "Inducción y sedación", grupo: "Cálculos" },
-  { id: "ventmec", eyebrow: "05", label: "Ventilación mecánica", grupo: "Cálculos" },
-  { id: "balance", eyebrow: "06", label: "Balance de líquidos", grupo: "Cálculos" },
-  { id: "gasometria", eyebrow: "07", label: "Interpretación de gasometría", grupo: "Cálculos" },
-  { id: "anestlocales", eyebrow: "08", label: "Dosis máx. anestésicos locales", grupo: "Cálculos" },
-  { id: "apfel", eyebrow: "09", label: "Score de Apfel (NVPO)", grupo: "Cálculos" },
+  { id: "peso", eyebrow: "01", label: "Peso ideal / predicho / corregido", grupo: "Paciente" },
+  { id: "ett", eyebrow: "02", label: "Tubo endotraqueal", grupo: "Vía aérea y ventilación" },
+  { id: "ventmec", eyebrow: "03", label: "Ventilación mecánica", grupo: "Vía aérea y ventilación" },
+  { id: "aminas", eyebrow: "04", label: "Conversión de aminas", grupo: "Farmacología" },
+  { id: "induccion", eyebrow: "05", label: "Inducción y sedación", grupo: "Farmacología" },
+  { id: "anestlocales", eyebrow: "06", label: "Dosis máx. anestésicos locales", grupo: "Farmacología" },
+  { id: "balance", eyebrow: "07", label: "Balance de líquidos", grupo: "Líquidos y metabolismo" },
+  { id: "gasometria", eyebrow: "08", label: "Interpretación de gasometría", grupo: "Líquidos y metabolismo" },
+  { id: "hco3", eyebrow: "09", label: "Reposición de bicarbonato (HCO3)", grupo: "Líquidos y metabolismo" },
+  { id: "calcio", eyebrow: "10", label: "Calcio corregido por albúmina", grupo: "Líquidos y metabolismo" },
+  { id: "apfel", eyebrow: "11", label: "Score de Apfel (NVPO)", grupo: "Riesgo perioperatorio" },
+  { id: "sangrado", eyebrow: "12", label: "Volumen sanguíneo y sangrado permisible", grupo: "Riesgo perioperatorio" },
   { id: "viaaerea", eyebrow: "R1", label: "Vía aérea difícil", grupo: "Referencia" },
   { id: "scores", eyebrow: "R2", label: "ASA y Caprini", grupo: "Referencia" },
   { id: "referencia", eyebrow: "R3", label: "Hemodinámica", grupo: "Referencia" },
+  { id: "potasio", eyebrow: "R4", label: "Reposición de potasio (K+)", grupo: "Referencia" },
 ];
+
+function StarIcon({ active, onClick }) {
+  return (
+    <button onClick={onClick} className="p-1 -m-1 shrink-0" aria-label="Marcar favorito">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill={active ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" className={active ? "text-amber-400" : "text-slate-600"}>
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+      </svg>
+    </button>
+  );
+}
 
 function Readout({ value, unit, size = "text-5xl" }) {
   return (
@@ -262,6 +340,11 @@ function Readout({ value, unit, size = "text-5xl" }) {
       {unit && <span className="text-lg text-emerald-500/70 ml-2">{unit}</span>}
     </div>
   );
+}
+
+function RangoAviso({ mostrar, texto = "Este valor parece fuera de rango fisiológico habitual. Verifica antes de continuar." }) {
+  if (!mostrar) return null;
+  return <div className="text-[11px] text-amber-500/90 mt-1.5 flex items-start gap-1">⚠️ <span>{texto}</span></div>;
 }
 
 function Field({ label, children }) {
@@ -290,6 +373,20 @@ function DrugTable({ title, lista, peso }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function CalcSection({ title, children, resultado, maxW = "max-w-4xl" }) {
+  return (
+    <section className={maxW}>
+      <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">{title}</h2>
+      <div className="md:grid md:grid-cols-2 md:gap-10 md:items-start">
+        <div>{children}</div>
+        <div className="mt-6 pt-6 md:mt-0 md:pt-0 border-t md:border-t-0 md:border-l border-slate-800 md:pl-10 space-y-5">
+          {resultado}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -351,6 +448,21 @@ export default function App() {
   const [apfelSel, setApfelSel] = useState({});
   const apfelScore = Object.values(apfelSel).filter(Boolean).length;
 
+  const [hctoReal, setHctoReal] = useState("");
+  const [hctoCritico, setHctoCritico] = useState(30);
+  const vsc = useMemo(() => volumenSanguineo(pesoReal, sexo), [pesoReal, sexo]);
+  const sangradoPerm = useMemo(() => sangradoPermisible(vsc, hctoReal, hctoCritico), [vsc, hctoReal, hctoCritico]);
+  const volEritReal = useMemo(() => volEritrocitario(vsc, hctoReal), [vsc, hctoReal]);
+  const volEritLimite = useMemo(() => volEritrocitario(vsc, hctoCritico), [vsc, hctoCritico]);
+  const volPlasma = useMemo(() => (vsc != null && volEritReal != null ? vsc - volEritReal : null), [vsc, volEritReal]);
+
+  const [deficitBase, setDeficitBase] = useState("");
+  const bicarbonato = useMemo(() => bicarbonatoNecesario(pesoReal, deficitBase), [pesoReal, deficitBase]);
+
+  const [caMedido, setCaMedido] = useState("");
+  const [albumina, setAlbumina] = useState("");
+  const caCorregido = useMemo(() => calcioCorregido(caMedido, albumina), [caMedido, albumina]);
+
   const [mlKg, setMlKg] = useState("6");
   const vt = useMemo(() => volumenTidal(pesoPredicho, mlKg), [pesoPredicho, mlKg]);
   const [vtVm, setVtVm] = useState("");
@@ -380,10 +492,96 @@ export default function App() {
 
   const [showIntro, setShowIntro] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [favoritos, setFavoritos] = useState([]);
+  const [recientes, setRecientes] = useState([]);
+
+  React.useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("anestesiapp-favoritos");
+      if (saved) setFavoritos(JSON.parse(saved));
+      const savedR = window.localStorage.getItem("anestesiapp-recientes");
+      if (savedR) setRecientes(JSON.parse(savedR));
+    } catch (e) {}
+  }, []);
+
+  React.useEffect(() => {
+    setRecientes((prev) => {
+      const next = [active, ...prev.filter((id) => id !== active)].slice(0, 4);
+      try {
+        window.localStorage.setItem("anestesiapp-recientes", JSON.stringify(next));
+      } catch (err) {}
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  const toggleFavorito = (id, e) => {
+    e.stopPropagation();
+    setFavoritos((prev) => {
+      const next = prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id];
+      try {
+        window.localStorage.setItem("anestesiapp-favoritos", JSON.stringify(next));
+      } catch (err) {}
+      return next;
+    });
+  };
+
+  const gruposNav = ["Paciente", "Vía aérea y ventilación", "Farmacología", "Líquidos y metabolismo", "Riesgo perioperatorio", "Referencia"];
+  const modulosFiltrados = MODULES.filter((m) => m.label.toLowerCase().includes(searchQuery.toLowerCase()));
+  const gruposVisibles = searchQuery
+    ? [{ nombre: "Resultados", items: modulosFiltrados }]
+    : [
+        ...(favoritos.length ? [{ nombre: "Favoritos", items: MODULES.filter((m) => favoritos.includes(m.id)) }] : []),
+        ...(recientes.filter((id) => id !== active).length
+          ? [{ nombre: "Recientes", items: recientes.filter((id) => id !== active).map((id) => MODULES.find((m) => m.id === id)).filter(Boolean) }]
+          : []),
+        ...gruposNav.map((g) => ({ nombre: g, items: MODULES.filter((m) => m.grupo === g) })),
+      ];
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
-  const gruposNav = ["Cálculos", "Referencia"];
   const currentModule = MODULES.find((m) => m.id === active);
+
+  const resumenResultado = (() => {
+    switch (active) {
+      case "peso": return pesoIdeal != null ? { label: "Peso ideal", value: pesoIdeal, unit: "kg" } : null;
+      case "aminas": return resultadoAminas != null ? { label: "Resultado", value: resultadoAminas, unit: modo === "mcg2ml" ? "ml/hr" : "mcg/kg/min" } : null;
+      case "ventmec": return vt != null ? { label: "Volumen tidal", value: vt, unit: "ml" } : null;
+      case "gasometria": return gaso ? { label: "Trastorno", value: gaso.primario, unit: "" } : null;
+      case "apfel": return { label: "Riesgo NVPO", value: APFEL_RIESGO[apfelScore], unit: "" };
+      case "sangrado": return sangradoPerm != null ? { label: "Sangrado permisible", value: sangradoPerm, unit: "mL" } : null;
+      case "hco3": return bicarbonato ? { label: "HCO3 dosis inicial", value: bicarbonato.inicial, unit: "mEq" } : null;
+      case "calcio": return caCorregido != null ? { label: "Ca corregido", value: caCorregido, unit: "mg/dL" } : null;
+      case "balance": return { label: "Balance neto", value: io.balance, unit: "mL" };
+      default: return null;
+    }
+  })();
+
+  const [shareToast, setShareToast] = useState("");
+
+  const compartirApp = async () => {
+    const shareData = {
+      title: "AnestesiApp",
+      text: "🩺 Te comparto AnestesiApp: calculadoras de anestesia hechas para el día a día en guardia (peso, dosis, ventilación, líquidos, gasometría y más). Pruébala, seguro te ahorra tiempo:",
+      url: window.location.href,
+    };
+    if (navigator.share) {
+      try {
+        await navigator.share(shareData);
+      } catch (e) {
+        // usuario canceló, no hacer nada
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(`${shareData.text} ${shareData.url}`);
+        setShareToast("Enlace copiado");
+        setTimeout(() => setShareToast(""), 2200);
+      } catch (e) {
+        setShareToast("No se pudo copiar el enlace");
+        setTimeout(() => setShareToast(""), 2200);
+      }
+    }
+  };
 
   React.useEffect(() => {
     const isStandalone =
@@ -428,6 +626,20 @@ export default function App() {
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> ACTIVO
           </div>
           <button
+            onClick={compartirApp}
+            className="h-7 pl-2.5 pr-3 rounded-full border border-emerald-400/50 bg-emerald-400/10 text-emerald-300 flex items-center gap-1.5 text-xs font-medium hover:bg-emerald-400/20 hover:border-emerald-400"
+            aria-label="Compartir"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <line x1="8.6" y1="10.5" x2="15.4" y2="6.5" />
+              <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
+            </svg>
+            Compartir
+          </button>
+          <button
             onClick={() => setShowIntro(true)}
             className="w-7 h-7 rounded-full border border-slate-700 text-slate-400 text-xs font-mono flex items-center justify-center hover:border-emerald-400 hover:text-emerald-300"
             aria-label="Ayuda"
@@ -436,6 +648,12 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {shareToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-400/15 border border-emerald-400/50 text-emerald-300 text-xs px-4 py-2 rounded-full">
+          {shareToast}
+        </div>
+      )}
 
       {showInstallBanner && (
         <div className="md:hidden bg-emerald-400/10 border-b border-emerald-400/30 px-4 py-2.5 flex items-start gap-2">
@@ -468,12 +686,21 @@ export default function App() {
           </span>
         </button>
         {mobileNavOpen && (
-          <div className="px-3 pb-3 max-h-[60vh] overflow-y-auto">
-            {gruposNav.map((g) => (
-              <div key={g} className="mb-3">
-                <div className="px-1 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">{g}</div>
+          <div className="px-3 pb-3 max-h-[70vh] overflow-y-auto">
+            <div className="relative mb-3">
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar módulo…"
+                className="w-full bg-slate-900/80 border border-slate-700 focus:border-emerald-400 focus:outline-none rounded-md pl-3 pr-3 py-2 text-sm text-slate-100"
+              />
+            </div>
+            {gruposVisibles.map((g) => (
+              <div key={g.nombre} className="mb-3">
+                <div className="px-1 py-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">{g.nombre}</div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {MODULES.filter((m) => m.grupo === g).map((m) => (
+                  {g.items.map((m) => (
                     <button
                       key={m.id}
                       onClick={() => { setActive(m.id); setMobileNavOpen(false); }}
@@ -481,7 +708,10 @@ export default function App() {
                         active === m.id ? "bg-emerald-400/10 border-emerald-400/60" : "border-slate-800 hover:bg-slate-900/40"
                       }`}
                     >
-                      <div className={`text-[10px] tracking-[0.15em] font-mono ${g === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{m.eyebrow}</div>
+                      <div className="flex items-center justify-between gap-1">
+                        <div className={`text-[10px] tracking-[0.15em] font-mono ${m.grupo === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{m.eyebrow}</div>
+                        <StarIcon active={favoritos.includes(m.id)} onClick={(e) => toggleFavorito(m.id, e)} />
+                      </div>
                       <div className={`text-xs leading-tight ${active === m.id ? "text-emerald-300" : "text-slate-300"}`}>{m.label}</div>
                     </button>
                   ))}
@@ -494,11 +724,20 @@ export default function App() {
 
       <div className="flex flex-1 flex-col md:flex-row">
         <nav className="hidden md:block md:w-60 border-b md:border-b-0 md:border-r border-slate-800 md:overflow-y-auto">
-          {gruposNav.map((g) => (
-            <div key={g} className="p-3 md:p-0 border-b border-slate-800/60 md:border-b-0 last:border-b-0">
-              <div className="px-1 md:px-4 pt-1 md:pt-3 pb-2 md:pb-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">{g}</div>
+          <div className="p-3 border-b border-slate-800/60">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar módulo…"
+              className="w-full bg-slate-900/80 border border-slate-700 focus:border-emerald-400 focus:outline-none rounded-md px-3 py-2 text-sm text-slate-100"
+            />
+          </div>
+          {gruposVisibles.map((g) => (
+            <div key={g.nombre} className="p-3 md:p-0 border-b border-slate-800/60 md:border-b-0 last:border-b-0">
+              <div className="px-1 md:px-4 pt-1 md:pt-3 pb-2 md:pb-1 text-[10px] uppercase tracking-[0.2em] text-slate-600">{g.nombre}</div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-1 gap-2 md:gap-0">
-                {MODULES.filter((m) => m.grupo === g).map((m) => (
+                {g.items.map((m) => (
                   <button
                     key={m.id}
                     onClick={() => setActive(m.id)}
@@ -508,7 +747,10 @@ export default function App() {
                         : "hover:bg-slate-900/40"
                     }`}
                   >
-                    <div className={`text-[10px] tracking-[0.15em] font-mono ${g === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{m.eyebrow}</div>
+                    <div className="flex items-center justify-between gap-1">
+                      <div className={`text-[10px] tracking-[0.15em] font-mono ${m.grupo === "Referencia" ? "text-cyan-500" : "text-slate-500"}`}>{m.eyebrow}</div>
+                      <StarIcon active={favoritos.includes(m.id)} onClick={(e) => toggleFavorito(m.id, e)} />
+                    </div>
                     <div className={`text-xs md:text-sm leading-tight ${active === m.id ? "text-emerald-300" : "text-slate-300"}`}>{m.label}</div>
                   </button>
                 ))}
@@ -517,12 +759,29 @@ export default function App() {
           ))}
         </nav>
 
-        <main className="flex-1 p-5 md:p-8 relative overflow-hidden">
+        <main className="flex-1 p-5 pb-24 md:p-8 md:pb-8 relative overflow-hidden">
           <div className="pointer-events-none absolute left-0 right-0 h-24 opacity-[0.04] bg-gradient-to-b from-transparent via-emerald-300 to-transparent" style={{ animation: "scan 6s linear infinite" }} />
 
           {active === "peso" && (
-            <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Peso ideal, predicho y corregido</h2>
+            <CalcSection
+              title="Peso ideal, predicho y corregido"
+              resultado={
+                <>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso ideal — talla (m) × 2 × 21.5 (♀) o × 23 (♂)</div>
+                    <Readout value={pesoIdeal ?? "—"} unit="kg" size="text-3xl" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso predicho (PBW) — (talla cm − 152.4) × 0.9 + 45 (♀) o + 50 (♂), usado para volumen tidal</div>
+                    <Readout value={pesoPredicho ?? "—"} unit="kg" size="text-3xl" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso corregido — peso ideal + 0.5 × (peso real − peso ideal), pacientes con obesidad</div>
+                    <Readout value={abw ?? "—"} unit="kg" size="text-3xl" />
+                  </div>
+                </>
+              }
+            >
               <Field label="Sexo">
                 <div className="flex gap-2">
                   {["F", "M"].map((s) => (
@@ -534,50 +793,44 @@ export default function App() {
               </Field>
               <Field label="Estatura (cm)">
                 <input className={inputCls} type="number" value={altura} onChange={(e) => setAltura(e.target.value)} placeholder="165" />
+                <RangoAviso mostrar={fueraDeRango(altura, 120, 210)} />
               </Field>
               <Field label="Peso real (kg) — se comparte con aminas, inducción, balance y anestésicos locales">
                 <input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="95" />
+                <RangoAviso mostrar={fueraDeRango(pesoReal, 30, 250)} />
               </Field>
-              <div className="mt-6 pt-6 border-t border-slate-800 space-y-5">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso ideal — talla (m) × 2 × 21.5 (♀) o × 23 (♂)</div>
-                  <Readout value={pesoIdeal ?? "—"} unit="kg" size="text-3xl" />
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso predicho (PBW) — (talla cm − 152.4) × 0.9 + 45 (♀) o + 50 (♂), usado para volumen tidal</div>
-                  <Readout value={pesoPredicho ?? "—"} unit="kg" size="text-3xl" />
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Peso corregido — peso ideal + 0.5 × (peso real − peso ideal), pacientes con obesidad</div>
-                  <Readout value={abw ?? "—"} unit="kg" size="text-3xl" />
-                </div>
-              </div>
-            </section>
+            </CalcSection>
           )}
 
           {active === "ett" && (
-            <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Tubo endotraqueal</h2>
+            <CalcSection
+              title="Tubo endotraqueal"
+              resultado={
+                <>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Diámetro interno (mm)</div>
+                    <Readout value={ett?.diametro ?? "—"} size="text-2xl" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Profundidad de inserción (cm, comisura labial)</div>
+                    <Readout value={ett?.profundidad ?? "—"} unit="cm" size="text-3xl" />
+                  </div>
+                  {ett?.nota && <p className="text-xs text-slate-500 pt-2">{ett.nota}</p>}
+                </>
+              }
+            >
               <Field label="Edad (años)">
                 <input className={inputCls} type="number" value={edad} onChange={(e) => setEdad(e.target.value)} placeholder="5" />
+                <RangoAviso mostrar={fueraDeRango(edad, 0, 100)} />
               </Field>
-              <div className="mt-6 pt-6 border-t border-slate-800 space-y-4">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Diámetro interno (mm)</div>
-                  <Readout value={ett?.diametro ?? "—"} size="text-2xl" />
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Profundidad de inserción (cm, comisura labial)</div>
-                  <Readout value={ett?.profundidad ?? "—"} unit="cm" size="text-3xl" />
-                </div>
-                {ett?.nota && <p className="text-xs text-slate-500 pt-2">{ett.nota}</p>}
-              </div>
-            </section>
+            </CalcSection>
           )}
 
           {active === "aminas" && (
-            <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Conversión de aminas</h2>
+            <CalcSection
+              title="Conversión de aminas"
+              resultado={<Readout value={resultadoAminas ?? "—"} unit={modo === "mcg2ml" ? "ml/hr" : "mcg/kg/min"} />}
+            >
               <div className="flex gap-2 mb-5">
                 <button onClick={() => setModo("mcg2ml")} className={`flex-1 py-2 rounded-md border text-xs font-mono ${modo === "mcg2ml" ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>mcg/kg/min → ml/hr</button>
                 <button onClick={() => setModo("ml2mcg")} className={`flex-1 py-2 rounded-md border text-xs font-mono ${modo === "ml2mcg" ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>ml/hr → mcg/kg/min</button>
@@ -592,198 +845,220 @@ export default function App() {
                 <Field label="Mg en la bolsa"><input className={inputCls} type="number" value={mgBolsa} onChange={(e) => setMgBolsa(e.target.value)} placeholder="4" /></Field>
                 <Field label="Volumen (ml)"><input className={inputCls} type="number" value={volBolsa} onChange={(e) => setVolBolsa(e.target.value)} placeholder="250" /></Field>
               </div>
-              <div className="mt-6 pt-6 border-t border-slate-800"><Readout value={resultadoAminas ?? "—"} unit={modo === "mcg2ml" ? "ml/hr" : "mcg/kg/min"} /></div>
-            </section>
+            </CalcSection>
           )}
 
           {active === "induccion" && (
-            <section className="max-w-lg">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Dosis de inducción y sedación</h2>
+            <CalcSection
+              title="Dosis de inducción y sedación"
+              maxW="max-w-3xl"
+              resultado={
+                <>
+                  <DrugTable title="Inducción" lista={INDUCCION_DRUGS} peso={induccion} />
+                  <DrugTable title="Sedación / mantenimiento" lista={SEDACION_DRUGS} peso={sedacion} />
+                </>
+              }
+            >
               <Field label="Peso del paciente (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
-              <div className="mt-4 pt-4 border-t border-slate-800">
-                <DrugTable title="Inducción" lista={INDUCCION_DRUGS} peso={induccion} />
-                <DrugTable title="Sedación / mantenimiento" lista={SEDACION_DRUGS} peso={sedacion} />
-              </div>
-            </section>
+            </CalcSection>
           )}
 
           {active === "ventmec" && (
-            <section className="max-w-lg">
+            <section className="max-w-4xl">
               <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Ventilación mecánica</h2>
 
-              <div className="mb-8 p-4 rounded-md border border-slate-800 bg-slate-900/30">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Volumen tidal protector</div>
-                <div className="grid grid-cols-2 gap-3 mb-2">
-                  <Field label="Peso predicho (kg) — del módulo Peso">
-                    <div className={`${inputCls} flex items-center`}>{pesoPredicho ?? <span className="text-slate-600">completa el módulo Peso</span>}</div>
-                  </Field>
-                  <Field label="ml/kg objetivo">
-                    <select className={inputCls} value={mlKg} onChange={(e) => setMlKg(e.target.value)}>
-                      {[4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n} ml/kg</option>)}
-                    </select>
-                  </Field>
+              <div className="md:grid md:grid-cols-2 md:gap-6">
+                <div className="mb-6 md:mb-0 p-4 rounded-md border border-slate-800 bg-slate-900/30">
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Volumen tidal protector</div>
+                  <div className="grid grid-cols-2 gap-3 mb-2">
+                    <Field label="Peso predicho (kg) — del módulo Peso">
+                      <div className={`${inputCls} flex items-center`}>{pesoPredicho ?? <span className="text-slate-600">completa el módulo Peso</span>}</div>
+                    </Field>
+                    <Field label="ml/kg objetivo">
+                      <select className={inputCls} value={mlKg} onChange={(e) => setMlKg(e.target.value)}>
+                        {[4, 5, 6, 7, 8].map((n) => <option key={n} value={n}>{n} ml/kg</option>)}
+                      </select>
+                    </Field>
+                  </div>
+                  <Readout value={vt ?? "—"} unit="ml" size="text-3xl" />
                 </div>
-                <Readout value={vt ?? "—"} unit="ml" size="text-3xl" />
+
+                <div className="mb-6 md:mb-0 p-4 rounded-md border border-slate-800 bg-slate-900/30">
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Volumen minuto</div>
+                  <div className="grid grid-cols-2 gap-3 mb-2">
+                    <Field label="Volumen tidal (ml)"><input className={inputCls} type="number" value={vtVm} onChange={(e) => setVtVm(e.target.value)} placeholder="420" /></Field>
+                    <Field label="Frecuencia (rpm)"><input className={inputCls} type="number" value={frVm} onChange={(e) => setFrVm(e.target.value)} placeholder="14" /></Field>
+                  </div>
+                  <Readout value={vm ?? "—"} unit="L/min" size="text-3xl" />
+                </div>
+
+                <div className="mb-6 md:mb-0 p-4 rounded-md border border-slate-800 bg-slate-900/30 md:col-span-2">
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Distensibilidad estática</div>
+                  <div className="grid grid-cols-3 gap-3 mb-2 max-w-md">
+                    <Field label="Vt (ml)"><input className={inputCls} type="number" value={vtCst} onChange={(e) => setVtCst(e.target.value)} placeholder="420" /></Field>
+                    <Field label="Pplat (cmH2O)"><input className={inputCls} type="number" value={pplatCst} onChange={(e) => setPplatCst(e.target.value)} placeholder="22" /></Field>
+                    <Field label="PEEP (cmH2O)"><input className={inputCls} type="number" value={peepCst} onChange={(e) => setPeepCst(e.target.value)} placeholder="5" /></Field>
+                  </div>
+                  <Readout value={cst ?? "—"} unit="ml/cmH2O" size="text-3xl" />
+                </div>
               </div>
 
-              <div className="mb-8 p-4 rounded-md border border-slate-800 bg-slate-900/30">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Volumen minuto</div>
-                <div className="grid grid-cols-2 gap-3 mb-2">
-                  <Field label="Volumen tidal (ml)"><input className={inputCls} type="number" value={vtVm} onChange={(e) => setVtVm(e.target.value)} placeholder="420" /></Field>
-                  <Field label="Frecuencia (rpm)"><input className={inputCls} type="number" value={frVm} onChange={(e) => setFrVm(e.target.value)} placeholder="14" /></Field>
-                </div>
-                <Readout value={vm ?? "—"} unit="L/min" size="text-3xl" />
+              <div className="mt-6">
+                <RefTable rows={VENT_REF} />
               </div>
-
-              <div className="mb-8 p-4 rounded-md border border-slate-800 bg-slate-900/30">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Distensibilidad estática</div>
-                <div className="grid grid-cols-3 gap-3 mb-2">
-                  <Field label="Vt (ml)"><input className={inputCls} type="number" value={vtCst} onChange={(e) => setVtCst(e.target.value)} placeholder="420" /></Field>
-                  <Field label="Pplat (cmH2O)"><input className={inputCls} type="number" value={pplatCst} onChange={(e) => setPplatCst(e.target.value)} placeholder="22" /></Field>
-                  <Field label="PEEP (cmH2O)"><input className={inputCls} type="number" value={peepCst} onChange={(e) => setPeepCst(e.target.value)} placeholder="5" /></Field>
-                </div>
-                <Readout value={cst ?? "—"} unit="ml/cmH2O" size="text-3xl" />
-              </div>
-
-              <RefTable rows={VENT_REF} />
             </section>
           )}
 
           {active === "balance" && (
-            <section className="max-w-lg">
+            <section className="max-w-5xl">
               <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Balance de líquidos</h2>
 
-              <div className="mb-8 p-4 rounded-md border border-slate-800 bg-slate-900/30">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Ingresos y egresos</div>
-                <div className="grid grid-cols-2 gap-3 mb-1">
-                  <Field label="Líquidos IV (ml)"><input className={inputCls} type="number" value={ivAdmin} onChange={(e) => setIvAdmin(e.target.value)} placeholder="1500" /></Field>
-                  <Field label="Hemoderivados (ml)"><input className={inputCls} type="number" value={hemoderivados} onChange={(e) => setHemoderivados(e.target.value)} placeholder="0" /></Field>
-                </div>
-                <Field label="Otros ingresos (ml)"><input className={inputCls} type="number" value={otrosIn} onChange={(e) => setOtrosIn(e.target.value)} placeholder="0" /></Field>
-                <div className="grid grid-cols-2 gap-3 mb-1">
-                  <Field label="Diuresis (ml)"><input className={inputCls} type="number" value={diuresis} onChange={(e) => setDiuresis(e.target.value)} placeholder="300" /></Field>
-                  <Field label="Sangrado estimado (ml)"><input className={inputCls} type="number" value={sangrado} onChange={(e) => setSangrado(e.target.value)} placeholder="200" /></Field>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Pérdidas insensibles (ml)"><input className={inputCls} type="number" value={insensibles} onChange={(e) => setInsensibles(e.target.value)} placeholder="150" /></Field>
-                  <Field label="Otros egresos (ml)"><input className={inputCls} type="number" value={otrosOut} onChange={(e) => setOtrosOut(e.target.value)} placeholder="0" /></Field>
-                </div>
-                <div className="mt-4 pt-4 border-t border-slate-800 grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Ingresos / Egresos</div>
-                    <div className="font-mono text-sm text-slate-300">{io.ingresos} ml / {io.egresos} ml</div>
+              <div className="md:grid md:grid-cols-2 md:gap-6 md:items-start">
+                <div className="mb-6 md:mb-0 p-4 rounded-md border border-slate-800 bg-slate-900/30">
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Ingresos y egresos</div>
+                  <div className="grid grid-cols-2 gap-3 mb-1">
+                    <Field label="Líquidos IV (ml)"><input className={inputCls} type="number" value={ivAdmin} onChange={(e) => setIvAdmin(e.target.value)} placeholder="1500" /></Field>
+                    <Field label="Hemoderivados (ml)"><input className={inputCls} type="number" value={hemoderivados} onChange={(e) => setHemoderivados(e.target.value)} placeholder="0" /></Field>
                   </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Balance neto</div>
-                    <Readout value={io.balance} unit="ml" size="text-2xl" />
+                  <Field label="Otros ingresos (ml)"><input className={inputCls} type="number" value={otrosIn} onChange={(e) => setOtrosIn(e.target.value)} placeholder="0" /></Field>
+                  <div className="grid grid-cols-2 gap-3 mb-1">
+                    <Field label="Diuresis (ml)"><input className={inputCls} type="number" value={diuresis} onChange={(e) => setDiuresis(e.target.value)} placeholder="300" /></Field>
+                    <Field label="Sangrado estimado (ml)"><input className={inputCls} type="number" value={sangrado} onChange={(e) => setSangrado(e.target.value)} placeholder="200" /></Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Pérdidas insensibles (ml)"><input className={inputCls} type="number" value={insensibles} onChange={(e) => setInsensibles(e.target.value)} placeholder="150" /></Field>
+                    <Field label="Otros egresos (ml)"><input className={inputCls} type="number" value={otrosOut} onChange={(e) => setOtrosOut(e.target.value)} placeholder="0" /></Field>
+                  </div>
+                  <div className="mt-4 pt-4 border-t border-slate-800 grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Ingresos / Egresos</div>
+                      <div className="font-mono text-sm text-slate-300">{io.ingresos} ml / {io.egresos} ml</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Balance neto</div>
+                      <Readout value={io.balance} unit="ml" size="text-2xl" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="p-4 rounded-md border border-slate-800 bg-slate-900/30">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Reposición perioperatoria (déficit + mantenimiento + tercer espacio)</div>
-                <div className="grid grid-cols-2 gap-3 mb-2">
-                  <Field label="Peso (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
-                  <Field label="Horas de ayuno"><input className={inputCls} type="number" value={horasAyuno} onChange={(e) => setHorasAyuno(e.target.value)} placeholder="8" /></Field>
-                </div>
-                <Field label="Trauma quirúrgico (tercer espacio)">
-                  <div className="flex gap-2">
-                    {[["menor", "Menor"], ["moderado", "Moderado"], ["severo", "Severo"]].map(([id, label]) => (
-                      <button key={id} onClick={() => setSeveridad(id)} className={`flex-1 py-2 rounded-md border text-xs font-mono ${severidad === id ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>{label}</button>
-                    ))}
+                <div className="p-4 rounded-md border border-slate-800 bg-slate-900/30">
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-3">Reposición perioperatoria (déficit + mantenimiento + tercer espacio)</div>
+                  <div className="grid grid-cols-2 gap-3 mb-2">
+                    <Field label="Peso (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
+                    <Field label="Horas de ayuno"><input className={inputCls} type="number" value={horasAyuno} onChange={(e) => setHorasAyuno(e.target.value)} placeholder="8" /></Field>
                   </div>
-                </Field>
-                <div className="mt-4 pt-4 border-t border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Déficit total por ayuno</span>
-                    <span className="font-mono text-emerald-300 text-sm">{repo?.deficit ?? "—"} ml</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Mantenimiento horario</span>
-                    <span className="font-mono text-emerald-300 text-sm">{repo?.mantHr ?? "—"} ml/hr</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Tercer espacio (por hora)</span>
-                    <span className="font-mono text-emerald-300 text-sm">{repo?.tercerEsp ?? "—"} ml/hr</span>
-                  </div>
-                  <div className="pt-3 border-t border-slate-900 grid grid-cols-3 gap-2 text-center">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Hora 1</div>
-                      <div className="font-mono text-emerald-300">{repo?.hora1 ?? "—"}</div>
+                  <Field label="Trauma quirúrgico (tercer espacio)">
+                    <div className="flex gap-2">
+                      {[["menor", "Menor"], ["moderado", "Moderado"], ["severo", "Severo"]].map(([id, label]) => (
+                        <button key={id} onClick={() => setSeveridad(id)} className={`flex-1 py-2 rounded-md border text-xs font-mono ${severidad === id ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>{label}</button>
+                      ))}
                     </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Hora 2</div>
-                      <div className="font-mono text-emerald-300">{repo?.hora2 ?? "—"}</div>
+                  </Field>
+                  <div className="mt-4 pt-4 border-t border-slate-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">Déficit total por ayuno</span>
+                      <span className="font-mono text-emerald-300 text-sm">{repo?.deficit ?? "—"} ml</span>
                     </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Hora 3</div>
-                      <div className="font-mono text-emerald-300">{repo?.hora3 ?? "—"}</div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">Mantenimiento horario</span>
+                      <span className="font-mono text-emerald-300 text-sm">{repo?.mantHr ?? "—"} ml/hr</span>
                     </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-500">Tercer espacio (por hora)</span>
+                      <span className="font-mono text-emerald-300 text-sm">{repo?.tercerEsp ?? "—"} ml/hr</span>
+                    </div>
+                    <div className="pt-3 border-t border-slate-900 grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Hora 1</div>
+                        <div className="font-mono text-emerald-300">{repo?.hora1 ?? "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Hora 2</div>
+                        <div className="font-mono text-emerald-300">{repo?.hora2 ?? "—"}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.1em] text-slate-500">Hora 3</div>
+                        <div className="font-mono text-emerald-300">{repo?.hora3 ?? "—"}</div>
+                      </div>
+                    </div>
+                    <div className="text-[10px] text-slate-600 text-center">ml a infundir por hora (regla 50% / 25% / 25% del déficit)</div>
                   </div>
-                  <div className="text-[10px] text-slate-600 text-center">ml a infundir por hora (regla 50% / 25% / 25% del déficit)</div>
                 </div>
               </div>
             </section>
           )}
 
           {active === "anestlocales" && (
-            <section className="max-w-lg">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Dosis máxima — anestésicos locales</h2>
+            <CalcSection
+              title="Dosis máxima — anestésicos locales"
+              resultado={
+                <div className="space-y-3">
+                  {(dosisAL ?? AL_MAX.map((f) => ({ nombre: f.nombre, mg: conEpi ? f.conEpi : f.sinEpi, tope: conEpi ? f.maxAbsConEpi : f.maxAbsSinEpi }))).map((f) => (
+                    <div key={f.nombre} className="flex items-center justify-between border-b border-slate-900 pb-2">
+                      <span className="text-sm text-slate-300">{f.nombre}</span>
+                      <span className="font-mono text-emerald-300 tabular-nums text-sm">{dosisAL ? `${f.mg} mg` : `${f.mg} mg/kg`} <span className="text-slate-600">· tope {f.tope} mg</span></span>
+                    </div>
+                  ))}
+                </div>
+              }
+            >
               <Field label="Peso del paciente (kg) — compartido con el módulo Peso"><input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" /></Field>
               <div className="flex gap-2 mb-5">
                 <button onClick={() => setConEpi(false)} className={`flex-1 py-2 rounded-md border text-xs font-mono ${!conEpi ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>Sin epinefrina</button>
                 <button onClick={() => setConEpi(true)} className={`flex-1 py-2 rounded-md border text-xs font-mono ${conEpi ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>Con epinefrina</button>
               </div>
-              <div className="space-y-3">
-                {(dosisAL ?? AL_MAX.map((f) => ({ nombre: f.nombre, mg: conEpi ? f.conEpi : f.sinEpi, tope: conEpi ? f.maxAbsConEpi : f.maxAbsSinEpi }))).map((f) => (
-                  <div key={f.nombre} className="flex items-center justify-between border-b border-slate-900 pb-2">
-                    <span className="text-sm text-slate-300">{f.nombre}</span>
-                    <span className="font-mono text-emerald-300 tabular-nums text-sm">{dosisAL ? `${f.mg} mg` : `${f.mg} mg/kg`} <span className="text-slate-600">· tope {f.tope} mg</span></span>
-                  </div>
-                ))}
-              </div>
-            </section>
+            </CalcSection>
           )}
 
           {active === "gasometria" && (
-            <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Interpretación de gasometría arterial</h2>
+            <CalcSection
+              title="Interpretación de gasometría arterial"
+              resultado={
+                <>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Estado ácido-base</div>
+                    <Readout value={gaso?.estado ?? "—"} size="text-2xl" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Trastorno primario</div>
+                    <div className="font-mono text-emerald-300 text-lg">{gaso?.primario ?? "—"}</div>
+                  </div>
+                  {gaso?.compensacion && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Compensación</div>
+                      <div className="text-sm text-slate-300 leading-relaxed">{gaso.compensacion}</div>
+                    </div>
+                  )}
+                  {gaso?.oxigenacion && (
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Oxigenación</div>
+                      <div className="font-mono text-cyan-300 text-sm">{gaso.oxigenacion}</div>
+                    </div>
+                  )}
+                </>
+              }
+            >
               <div className="grid grid-cols-3 gap-3 mb-2">
                 <Field label="pH"><input className={inputCls} type="number" step="0.01" value={gasoPh} onChange={(e) => setGasoPh(e.target.value)} placeholder="7.30" /></Field>
                 <Field label="PaCO2 (mmHg)"><input className={inputCls} type="number" value={gasoPco2} onChange={(e) => setGasoPco2(e.target.value)} placeholder="30" /></Field>
                 <Field label="HCO3 (mEq/L)"><input className={inputCls} type="number" value={gasoHco3} onChange={(e) => setGasoHco3(e.target.value)} placeholder="15" /></Field>
               </div>
               <Field label="PaO2 (mmHg) — opcional"><input className={inputCls} type="number" value={gasoPao2} onChange={(e) => setGasoPao2(e.target.value)} placeholder="90" /></Field>
-
-              <div className="mt-6 pt-6 border-t border-slate-800 space-y-4">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Estado ácido-base</div>
-                  <Readout value={gaso?.estado ?? "—"} size="text-2xl" />
-                </div>
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Trastorno primario</div>
-                  <div className="font-mono text-emerald-300 text-lg">{gaso?.primario ?? "—"}</div>
-                </div>
-                {gaso?.compensacion && (
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Compensación</div>
-                    <div className="text-sm text-slate-300 leading-relaxed">{gaso.compensacion}</div>
-                  </div>
-                )}
-                {gaso?.oxigenacion && (
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Oxigenación</div>
-                    <div className="font-mono text-cyan-300 text-sm">{gaso.oxigenacion}</div>
-                  </div>
-                )}
-              </div>
-            </section>
+            </CalcSection>
           )}
 
           {active === "apfel" && (
-            <section className="max-w-md">
-              <h2 className="text-sm uppercase tracking-[0.15em] text-slate-400 mb-6">Score de Apfel — riesgo de NVPO</h2>
-              <div className="space-y-2 mb-6">
+            <CalcSection
+              title="Score de Apfel — riesgo de NVPO"
+              resultado={
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Factores presentes: {apfelScore} de 4</div>
+                  <Readout value={APFEL_RIESGO[apfelScore]} size="text-4xl" />
+                  <div className="text-xs text-slate-500 mt-1">Riesgo estimado de náusea/vómito postoperatorio</div>
+                </div>
+              }
+            >
+              <div className="space-y-2">
                 {APFEL_ITEMS.map((it) => (
                   <label key={it.id} className="flex items-center gap-3 px-3 py-2.5 rounded-md border border-slate-800 cursor-pointer hover:bg-slate-900/40">
                     <input type="checkbox" checked={!!apfelSel[it.id]} onChange={(e) => setApfelSel((s) => ({ ...s, [it.id]: e.target.checked }))} className="accent-emerald-400 w-4 h-4" />
@@ -791,12 +1066,123 @@ export default function App() {
                   </label>
                 ))}
               </div>
-              <div className="pt-4 border-t border-slate-800">
-                <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Factores presentes: {apfelScore} de 4</div>
-                <Readout value={APFEL_RIESGO[apfelScore]} size="text-4xl" />
-                <div className="text-xs text-slate-500 mt-1">Riesgo estimado de náusea/vómito postoperatorio</div>
+            </CalcSection>
+          )}
+
+          {active === "sangrado" && (
+            <CalcSection
+              title="Volumen sanguíneo circulante y sangrado permisible"
+              resultado={
+                <>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Volumen sanguíneo circulante — peso × 65 (♀) o × 70 (♂)</div>
+                    <Readout value={vsc ?? "—"} unit="mL" size="text-3xl" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Sangrado permisible — VSC × (Hcto real − Hcto crítico) / Hcto real</div>
+                    <Readout value={sangradoPerm ?? "—"} unit="mL" size="text-3xl" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 pt-2">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Vol. eritrocitario real</div>
+                      <div className="font-mono text-emerald-300 text-lg">{volEritReal ?? "—"} mL</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Vol. eritrocitario límite</div>
+                      <div className="font-mono text-emerald-300 text-lg">{volEritLimite ?? "—"} mL</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Volumen de plasma total</div>
+                    <div className="font-mono text-emerald-300 text-lg">{volPlasma ?? "—"} mL</div>
+                  </div>
+                </>
+              }
+            >
+              <div className="mb-6 p-3 rounded-md border border-slate-800 bg-slate-900/30 text-xs text-slate-400 leading-relaxed">
+                Usa el peso y sexo del módulo <span className="text-emerald-300">Peso</span> ({sexo === "M" ? "♂ Masculino" : "♀ Femenino"}, {pesoReal || "—"} kg). Cámbialos ahí si es necesario.
               </div>
-            </section>
+
+              <Field label="Hematocrito real / actual (%)">
+                <input className={inputCls} type="number" value={hctoReal} onChange={(e) => setHctoReal(e.target.value)} placeholder="45" />
+              </Field>
+
+              <Field label="Hematocrito crítico (mínimo aceptable)">
+                <div className="flex gap-2">
+                  {[30, 28].map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => setHctoCritico(v)}
+                      className={`flex-1 py-2 rounded-md border font-mono text-sm ${hctoCritico === v ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}
+                    >
+                      {v}%
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            </CalcSection>
+          )}
+
+          {active === "hco3" && (
+            <CalcSection
+              title="Reposición de bicarbonato (HCO3) — adultos"
+              resultado={
+                <>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">HCO3 necesario — 0.2 × peso × déficit de base</div>
+                    <Readout value={bicarbonato?.total ?? "—"} unit="mEq total" size="text-3xl" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Dosis inicial recomendada (50%, reevaluar con gasometría después)</div>
+                    <Readout value={bicarbonato?.inicial ?? "—"} unit="mEq" size="text-3xl" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 pt-2">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Ampolletas 10 mL (8.9 mEq c/u)</div>
+                      <div className="font-mono text-emerald-300 text-lg">{bicarbonato?.ampolletas ?? "—"}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Frascos ámpula 50 mL (44.5 mEq c/u)</div>
+                      <div className="font-mono text-emerald-300 text-lg">{bicarbonato?.frascos ?? "—"}</div>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-amber-500/80 pt-2">Presentación Bicarnat 7.5% (Cuadro Básico IMSS). Verifica la concentración real disponible en tu unidad.</div>
+                </>
+              }
+            >
+              <div className="mb-6 p-3 rounded-md border border-slate-800 bg-slate-900/30 text-xs text-slate-400 leading-relaxed">
+                Usa el peso del módulo <span className="text-emerald-300">Peso</span> ({pesoReal || "—"} kg).
+              </div>
+              <Field label="Déficit de base (mEq/L, valor absoluto de la gasometría)">
+                <input className={inputCls} type="number" value={deficitBase} onChange={(e) => setDeficitBase(e.target.value)} placeholder="8" />
+              </Field>
+            </CalcSection>
+          )}
+
+          {active === "calcio" && (
+            <CalcSection
+              title="Calcio corregido por albúmina — fórmula de Payne"
+              resultado={
+                <>
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500 mb-1">Calcio corregido (normal 8.5 – 10.5 mg/dL)</div>
+                    <Readout value={caCorregido ?? "—"} unit="mg/dL" size="text-3xl" />
+                  </div>
+                  <div className="text-[11px] text-amber-500/80 pt-2 leading-relaxed">
+                    Fórmula de Payne (1973): Ca medido + 0.8 × (4.0 − albúmina). Es una estimación — el calcio iónico directo sigue siendo el estándar de oro cuando esté disponible.
+                  </div>
+                </>
+              }
+            >
+              <div className="grid grid-cols-2 gap-3 mb-2">
+                <Field label="Calcio total medido (mg/dL)">
+                  <input className={inputCls} type="number" value={caMedido} onChange={(e) => setCaMedido(e.target.value)} placeholder="8.0" />
+                </Field>
+                <Field label="Albúmina (g/dL)">
+                  <input className={inputCls} type="number" value={albumina} onChange={(e) => setAlbumina(e.target.value)} placeholder="2.5" />
+                </Field>
+              </div>
+            </CalcSection>
           )}
 
           {active === "viaaerea" && (
@@ -862,12 +1248,33 @@ export default function App() {
             </section>
           )}
 
+          {active === "potasio" && (
+            <section className="max-w-2xl">
+              <h2 className="text-sm uppercase tracking-[0.15em] text-cyan-400 mb-2">Reposición de potasio (K+) — guía de consulta</h2>
+              <p className="text-xs text-slate-500 mb-6">
+                No hay una calculadora de dosis aquí a propósito: la fórmula clásica de déficit de K+ es notablemente inexacta
+                (un mismo valor de K+ sérico puede corresponder a déficits corporales reales muy distintos), y el cloruro de
+                potasio IV es un medicamento de alto riesgo. La práctica clínica real se guía por velocidad de infusión según
+                severidad, no por un número calculado a partir de una fórmula.
+              </p>
+              <RefTable rows={K_REF} />
+            </section>
+          )}
+
           <div className="mt-10 pt-4 border-t border-slate-900 text-[11px] text-amber-500/80 leading-relaxed max-w-md">
             Herramienta de apoyo educativo. No sustituye el criterio clínico ni protocolos institucionales. Verificar siempre antes de aplicar en un paciente.
           </div>
         </main>
       </div>
-      <SpeedInsights />
+
+      {resumenResultado && (
+        <div className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-[#0A0E0D]/95 backdrop-blur border-t border-emerald-400/40 px-4 py-3 flex items-center justify-between shadow-[0_-4px_20px_rgba(0,0,0,0.4)]">
+          <span className="text-[10px] uppercase tracking-[0.15em] text-slate-400">{resumenResultado.label}</span>
+          <span className="font-mono text-emerald-300 text-lg" style={{ textShadow: "0 0 12px rgba(62,213,152,0.5)" }}>
+            {resumenResultado.value} <span className="text-sm text-emerald-500/70">{resumenResultado.unit}</span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }
