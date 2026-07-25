@@ -1099,9 +1099,18 @@ export default function App() {
                 </>
               }
             >
-              <div className="mb-6 p-3 rounded-md border border-slate-800 bg-slate-900/30 text-xs text-slate-400 leading-relaxed">
-                Usa el peso y sexo del módulo <span className="text-emerald-300">Peso</span> ({sexo === "M" ? "♂ Masculino" : "♀ Femenino"}, {pesoReal || "—"} kg). Cámbialos ahí si es necesario.
-              </div>
+              <Field label="Sexo — compartido con el módulo Peso">
+                <div className="flex gap-2">
+                  {["F", "M"].map((s) => (
+                    <button key={s} onClick={() => setSexo(s)} className={`flex-1 py-2 rounded-md border font-mono text-sm ${sexo === s ? "border-emerald-400 text-emerald-300 bg-emerald-400/10" : "border-slate-700 text-slate-400"}`}>
+                      {s === "F" ? "♀ Femenino" : "♂ Masculino"}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="Peso (kg) — compartido con el módulo Peso">
+                <input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" />
+              </Field>
 
               <Field label="Hematocrito real / actual (%)">
                 <input className={inputCls} type="number" value={hctoReal} onChange={(e) => setHctoReal(e.target.value)} placeholder="45" />
@@ -1150,9 +1159,9 @@ export default function App() {
                 </>
               }
             >
-              <div className="mb-6 p-3 rounded-md border border-slate-800 bg-slate-900/30 text-xs text-slate-400 leading-relaxed">
-                Usa el peso del módulo <span className="text-emerald-300">Peso</span> ({pesoReal || "—"} kg).
-              </div>
+              <Field label="Peso (kg) — compartido con el módulo Peso">
+                <input className={inputCls} type="number" value={pesoReal} onChange={(e) => setPesoReal(e.target.value)} placeholder="70" />
+              </Field>
               <Field label="Déficit de base (mEq/L, valor absoluto de la gasometría)">
                 <input className={inputCls} type="number" value={deficitBase} onChange={(e) => setDeficitBase(e.target.value)} placeholder="8" />
               </Field>
