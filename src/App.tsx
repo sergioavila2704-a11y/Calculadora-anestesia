@@ -559,6 +559,13 @@ export default function App() {
 
   const [shareToast, setShareToast] = useState("");
   const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackBannerOpen, setFeedbackBannerOpen] = useState(() => {
+    try { return localStorage.getItem("feedback_banner_dismissed") !== "1"; } catch (e) { return true; }
+  });
+  const cerrarFeedbackBanner = () => {
+    setFeedbackBannerOpen(false);
+    try { localStorage.setItem("feedback_banner_dismissed", "1"); } catch (e) { /* sin storage */ }
+  };
   const INSTAGRAM_USER = "anestesiapp";
 
   const compartirApp = async () => {
@@ -685,6 +692,7 @@ export default function App() {
             onClick={() => setShowFeedback(true)}
             className="h-7 w-7 sm:w-auto sm:pl-2.5 sm:pr-3 rounded-full border border-slate-700 text-slate-400 flex items-center justify-center gap-1.5 text-xs font-medium hover:border-emerald-400 hover:text-emerald-300"
             aria-label="Comentarios"
+            title="Enviar comentarios o sugerencias"
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -716,6 +724,25 @@ export default function App() {
               : <>toca los 3 puntos (⋮) arriba → "Instalar app" o "Añadir a pantalla principal".</>}
           </div>
           <button onClick={() => setShowInstallBanner(false)} className="text-emerald-300/70 text-lg leading-none px-1" aria-label="Cerrar aviso">×</button>
+        </div>
+      )}
+
+      {feedbackBannerOpen && (
+        <div className="sm:hidden bg-slate-900/60 border-b border-slate-800 px-4 py-2 flex items-center gap-2">
+          <button
+            onClick={() => setShowFeedback(true)}
+            className="flex-1 flex items-center gap-2 text-left"
+            aria-label="Enviar comentarios por Instagram"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-300 shrink-0">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span className="flex-1 text-xs text-slate-300 leading-snug">
+              <span className="text-emerald-300 font-semibold">¿Sugerencias o errores?</span> Cuéntanos por Instagram
+            </span>
+            <span className="text-emerald-300 text-sm leading-none">›</span>
+          </button>
+          <button onClick={cerrarFeedbackBanner} className="text-slate-500 text-lg leading-none px-1" aria-label="Cerrar aviso">×</button>
         </div>
       )}
 
