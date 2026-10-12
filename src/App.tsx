@@ -558,6 +558,8 @@ export default function App() {
   })();
 
   const [shareToast, setShareToast] = useState("");
+  const [showFeedback, setShowFeedback] = useState(false);
+  const INSTAGRAM_USER = "anestesiapp";
 
   const compartirApp = async () => {
     const shareData = {
@@ -616,6 +618,46 @@ export default function App() {
         </div>
       )}
 
+      {showFeedback && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4"
+          onClick={() => setShowFeedback(false)}
+        >
+          <div
+            className="max-w-sm w-full bg-[#0D1210] border border-slate-800 rounded-lg p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-[11px] uppercase tracking-[0.2em] text-emerald-400/80 mb-1">Comentarios</div>
+            <h2 className="text-lg font-semibold mb-2">¿Algo que mejorar?</h2>
+            <p className="text-sm text-slate-300 mb-5 leading-relaxed">
+              Si encontraste un error, quieres un módulo nuevo o tienes una sugerencia, escríbenos por Instagram. Leemos todos los mensajes.
+            </p>
+            <a
+              href={`https://ig.me/m/${INSTAGRAM_USER}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full text-center py-2.5 rounded-md bg-emerald-400/10 border border-emerald-400/60 text-emerald-300 font-mono text-sm hover:bg-emerald-400/20 mb-2"
+            >
+              Enviar mensaje en Instagram
+            </a>
+            <a
+              href={`https://www.instagram.com/${INSTAGRAM_USER}/`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full text-center py-2.5 rounded-md border border-slate-700 text-slate-300 font-mono text-sm hover:border-emerald-400 hover:text-emerald-300 mb-4"
+            >
+              Ver @{INSTAGRAM_USER}
+            </a>
+            <button
+              onClick={() => setShowFeedback(false)}
+              className="w-full text-xs text-slate-500 hover:text-slate-300"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="border-b border-slate-800 px-5 py-4 flex items-center justify-between">
         <div>
           <div className="text-[11px] uppercase tracking-[0.2em] text-emerald-400/80">Panel clínico</div>
@@ -638,6 +680,16 @@ export default function App() {
               <line x1="8.6" y1="13.5" x2="15.4" y2="17.5" />
             </svg>
             Compartir
+          </button>
+          <button
+            onClick={() => setShowFeedback(true)}
+            className="h-7 w-7 sm:w-auto sm:pl-2.5 sm:pr-3 rounded-full border border-slate-700 text-slate-400 flex items-center justify-center gap-1.5 text-xs font-medium hover:border-emerald-400 hover:text-emerald-300"
+            aria-label="Comentarios"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <span className="hidden sm:inline">Comentarios</span>
           </button>
           <button
             onClick={() => setShowIntro(true)}
